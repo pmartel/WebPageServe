@@ -1,8 +1,8 @@
+
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 
-// see C:\Program Files (x86)\Arduino\hardware\tools\avr\avr\include\avr for avr/interrupt.h
-#include <MsTimer2.h>
+#include <Ticker.h>
 
 //#define DEBUG_SEND
 
@@ -22,15 +22,19 @@ const int DIGITAL_PIN = 12; // Digital pin to be read
 // globals for LED and blinker state
 int led = 0;
 int blinker = 0;
+float blinkRate = 1.;
 
-MSTimer2 tim();
+Ticker tick;
 
 // Basic Web page
-const char Head[] = (\
-"HTTP/1.1 200 OK\r\n"\
-"Content-Type: text/html\r\n\r\n"\
-"<!DOCTYPE HTML>\r\n<html><head><title>\r\n"\
-"Thing Dev Board Web Page</title></head><body>\r\n"\;
+const char Head[] = ("\
+HTTP/1.1 200 OK\r\n\
+Content-Type: text/html\r\n\r\n\
+<!DOCTYPE HTML>\r\n<html><head><title>\r\n\
+Thing Dev Board Web Page</title></head><body>\r\n\
+");
+
+
 // use anchors instead of forms for this version
 // buttons inside anchors look good
 const char Bod[] =("\
@@ -98,20 +102,18 @@ void loop()
     switch ( c ){
       case '0':
         led = 0;
-        blinker = 0;
+        stopBlinker();
         digitalWrite(LED_PIN, 1-led);
         break; 
       case '1':
         led = 1;
-        blinker = 0;
+        stopBlinker();
         digitalWrite(LED_PIN, 1-led);
         break;
       case 'B':
         if ( blinker ){
-          blinker = 0;
           stopBlinker();
         }else{
-          blinker = 1;
           startBlinker();         
         }
         break; 
@@ -131,6 +133,7 @@ void loop()
   else if (req.indexOf("/read") != -1)
     val = -2; // Will print pin reads
   // Otherwise request will be invalid. We'll say as much in HTML
+
   // Set GPIO5 according to the request
   if (val >= 0)
     digitalWrite(LED_PIN, val);
@@ -139,12 +142,17 @@ void loop()
   //String s = "HTTP/1.1 200 OK\r\n";
   String s = "";
   s += Head;
-  s += Bod;
-  if ( blinker ){
-    s += "&nbsp;&nbsp;&nbsp;<a href=\"./?LED=B\"><button>Blue LED Blink Off</button></a><br /><br />";
+  s += Bod; // LED on and off buttons
+  // Add blinker button 
+  if ( blinker ){ // note that B0 would turn things off when on (if code modified)
+    s += "&nbsp;&nbsp;&nbsp;<a href=\"./?LED=B0\"><button style=\"background-color:#8080FF\">Blue LED Blink</button></a>";
   }else{
-    s += "&nbsp;&nbsp;&nbsp;<a href=\"./?LED=B\"><button>Blue LED Blink On</button></a><br /><br />";
+    s += "&nbsp;&nbsp;&nbsp;<a href=\"./?LED=B1\"><button>Blue LED Blink</button></a>";
   }
+  // add input box for blink rate
+  s += "&nbsp;Blink rate<input type=\"text\" name=\"blinkRate\" value=";
+  s += blinkRate; // Strings can append numbers
+  s += "><br />";
   s += Tail;
 
   // report response
@@ -204,7 +212,6 @@ void initHardware()
   digitalWrite(LED_PIN, HIGH);
   // Don't need to set ANALOG_PIN as input, 
   // that's all it can be.
-  tim.set(1000L, toggleLED );
 }
 
 void setupMDNS()
@@ -223,11 +230,13 @@ void setupMDNS()
 }
 
 void startBlinker(){
-  tim.start();
+  blinker = 1;
+  tick.attach(blinkRate/2.,toggleLED);
 }
 
 void stopBlinker(){
-  tim.stop(); 
+  blinker = 0;
+  tick.detach();
 }
 
 void toggleLED(){
